@@ -7,13 +7,25 @@ license.workspace = true
 
 [dependencies]
 anyhow = "1.0"
+async-trait = "0.1"
 axum = "0.8"
+axum-extra = { version = "0.10", features = ["cookie"] }
+base64 = "0.22"
+email_address = "0.2"
+hmac = "0.12"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
-sqlx = { version = "0.8", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio-rustls", "uuid"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio-rustls", "time", "uuid"] }
+subtle = "2.6"
+time = "0.3"
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.18", features = ["serde", "v7"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

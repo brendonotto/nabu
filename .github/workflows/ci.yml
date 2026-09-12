@@ -34,7 +34,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace
-      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/migrations/20260912000000_initial_schema.sql
+      - run: for migration in server/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"; done
 
   web:
     runs-on: ubuntu-latest

@@ -1,13 +1,25 @@
-use axum::{Json, Router, http::StatusCode, routing::get};
+use axum::{
+    Json, Router,
+    http::StatusCode,
+    middleware,
+    routing::{get, post},
+};
 use serde::Serialize;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
+pub mod auth;
+mod blogs;
 pub mod config;
+mod error;
+mod host;
+pub mod mail;
 
 #[derive(Clone)]
-struct AppState {
+pub(crate) struct AppState {
     pool: PgPool,
+    root_domain: String,
+    auth: auth::AuthConfig,
 }
 
 #[derive(Serialize)]
@@ -15,11 +27,28 @@ struct Health {
     status: &'static str,
 }
 
-pub fn app(pool: PgPool) -> Router {
+pub fn app(pool: PgPool, root_domain: String, auth: auth::AuthConfig) -> Router {
+    let state = AppState {
+        pool,
+        root_domain,
+        auth,
+    };
+    let api = Router::new()
+        .route("/auth/email/start", post(auth::start_email))
+        .route("/auth/email/verify", post(auth::verify_email))
+        .route("/auth/logout", post(auth::logout))
+        .route("/session", get(auth::session))
+        .route("/blog", post(blogs::create));
+
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
-        .with_state(AppState { pool })
+        .nest("/api/v1", api)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            host::require_known_host,
+        ))
+        .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
 
@@ -54,7 +83,7 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use tower::ServiceExt;
 
-    use super::app;
+    use super::{app, auth::AuthConfig};
 
     #[tokio::test]
     async fn health_is_available_without_database_access() {
@@ -62,15 +91,20 @@ mod tests {
             .connect_lazy("postgres://nabu:nabu@127.0.0.1:5432/nabu")
             .expect("test database URL should parse");
 
-        let response = app(pool)
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = app(
+            pool,
+            "nabu.test".to_owned(),
+            AuthConfig::new(b"test-secret-that-is-at-least-32-bytes".to_vec(), false).unwrap(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .header("host", "app.nabu.test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
     }

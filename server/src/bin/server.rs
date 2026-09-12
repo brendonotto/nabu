@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(config.bind_address).await?;
     tracing::info!(address = %config.bind_address, "server listening");
-    axum::serve(listener, app(pool)).await?;
+    axum::serve(listener, app(pool, config.root_domain, config.auth)).await?;
 
     Ok(())
 }
