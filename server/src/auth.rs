@@ -373,22 +373,29 @@ pub(crate) async fn require_session_and_csrf(
     jar: &CookieJar,
     headers: &HeaderMap,
 ) -> Result<AuthenticatedSession, ApiError> {
-    let token = jar
-        .get(SESSION_COOKIE)
-        .map(|cookie| cookie.value().to_owned())
-        .ok_or_else(unauthorized)?;
-    let authenticated = find_session(&state.pool, &token)
-        .await?
-        .ok_or_else(unauthorized)?;
+    let authenticated = require_session(state, jar).await?;
     let submitted = headers
         .get("x-csrf-token")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(invalid_csrf)?;
-    let expected = csrf_token(&token, &state.auth.secret);
+    let expected = csrf_token(&authenticated.token, &state.auth.secret);
     if !bool::from(submitted.as_bytes().ct_eq(expected.as_bytes())) {
         return Err(invalid_csrf());
     }
     Ok(authenticated)
+}
+
+pub(crate) async fn require_session(
+    state: &AppState,
+    jar: &CookieJar,
+) -> Result<AuthenticatedSession, ApiError> {
+    let token = jar
+        .get(SESSION_COOKIE)
+        .map(|cookie| cookie.value().to_owned())
+        .ok_or_else(unauthorized)?;
+    find_session(&state.pool, &token)
+        .await?
+        .ok_or_else(unauthorized)
 }
 
 async fn find_session(

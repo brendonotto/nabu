@@ -102,6 +102,19 @@ async fn sign_in(app: &Router, email: &str) -> (String, String) {
     (cookie, csrf)
 }
 
+async fn create_blog(app: &Router, cookie: &str, csrf: &str, title: &str, slug: &str) {
+    let response = request_json(
+        app,
+        "POST",
+        "/api/v1/blog",
+        json!({ "title": title, "slug": slug }),
+        Some(cookie),
+        Some(csrf),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn author_session_persists_and_creates_one_blog(pool: PgPool) {
     let app = test_app(pool.clone());
@@ -303,4 +316,152 @@ async fn throttles_code_requests_and_rejects_duplicate_blog_slugs(pool: PgPool) 
         response_json(duplicate).await["error"]["code"],
         "blog_slug_unavailable"
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
+    let app = test_app(pool.clone());
+    let (cookie, csrf) = sign_in(&app, "posts@example.com").await;
+    create_blog(&app, &cookie, &csrf, "Field Notes", "field-notes").await;
+
+    let created = request_json(
+        &app,
+        "POST",
+        "/api/v1/posts",
+        json!({
+            "title": "First light",
+            "slug": "first-light",
+            "summary": "A cold morning",
+            "body": "Snow <everywhere>\nAnd a quiet road",
+        }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await;
+    let post_id = created["id"].as_str().unwrap();
+    assert_eq!(created["revision"], 1);
+    assert_eq!(created["body"], "Snow <everywhere>\nAnd a quiet road");
+
+    let list = request_json(&app, "GET", "/api/v1/posts", json!({}), Some(&cookie), None).await;
+    assert_eq!(list.status(), StatusCode::OK);
+    let list = response_json(list).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["title"], "First light");
+    assert!(list[0].get("body").is_none());
+
+    let update_path = format!("/api/v1/posts/{post_id}");
+    let missing_csrf = request_json(
+        &app,
+        "PUT",
+        &update_path,
+        json!({
+            "revision": 1,
+            "title": "First light",
+            "slug": "first-light",
+            "body": "Changed",
+        }),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(missing_csrf.status(), StatusCode::FORBIDDEN);
+
+    let updated = request_json(
+        &app,
+        "PUT",
+        &update_path,
+        json!({
+            "revision": 1,
+            "title": "First light over the pass",
+            "slug": "first-light",
+            "summary": "",
+            "body": "Changed safely",
+        }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated = response_json(updated).await;
+    assert_eq!(updated["revision"], 2);
+    assert_eq!(updated["summary"], Value::Null);
+
+    let stale = request_json(
+        &app,
+        "PUT",
+        &update_path,
+        json!({
+            "revision": 1,
+            "title": "Stale title",
+            "slug": "first-light",
+            "body": "This must not win",
+        }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    let stale = response_json(stale).await;
+    assert_eq!(stale["error"]["code"], "stale_revision");
+    assert_eq!(stale["error"]["current_revision"], 2);
+
+    let stored: (Value, String) =
+        sqlx::query_as("SELECT content_json, rendered_html FROM posts WHERE id = $1")
+            .bind(post_id.parse::<Uuid>().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.0["type"], "doc");
+    assert_eq!(stored.1, "<p>Changed safely</p>");
+
+    let (other_cookie, other_csrf) = sign_in(&app, "other@example.com").await;
+    create_blog(&app, &other_cookie, &other_csrf, "Elsewhere", "elsewhere").await;
+    let cross_blog = request_json(
+        &app,
+        "GET",
+        &update_path,
+        json!({}),
+        Some(&other_cookie),
+        None,
+    )
+    .await;
+    assert_eq!(cross_blog.status(), StatusCode::NOT_FOUND);
+
+    let stale_delete = request_json(
+        &app,
+        "DELETE",
+        &update_path,
+        json!({ "revision": 1 }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(stale_delete.status(), StatusCode::CONFLICT);
+
+    let deleted = request_json(
+        &app,
+        "DELETE",
+        &update_path,
+        json!({ "revision": 2 }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let hidden = request_json(&app, "GET", &update_path, json!({}), Some(&cookie), None).await;
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+
+    let reserved_slug = request_json(
+        &app,
+        "POST",
+        "/api/v1/posts",
+        json!({ "title": "Reuse", "slug": "first-light" }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(reserved_slug.status(), StatusCode::CONFLICT);
 }

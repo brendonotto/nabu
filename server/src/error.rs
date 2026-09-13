@@ -9,6 +9,7 @@ pub(crate) struct ApiError {
     status: StatusCode,
     code: &'static str,
     message: &'static str,
+    current_revision: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -20,6 +21,8 @@ struct ErrorEnvelope {
 struct ErrorBody {
     code: &'static str,
     message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_revision: Option<i64>,
 }
 
 impl ApiError {
@@ -28,6 +31,16 @@ impl ApiError {
             status,
             code,
             message,
+            current_revision: None,
+        }
+    }
+
+    pub(crate) const fn stale_revision(current_revision: i64) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: "stale_revision",
+            message: "This post changed elsewhere. Reload the latest version before saving.",
+            current_revision: Some(current_revision),
         }
     }
 
@@ -49,6 +62,7 @@ impl IntoResponse for ApiError {
                 error: ErrorBody {
                     code: self.code,
                     message: self.message,
+                    current_revision: self.current_revision,
                 },
             }),
         )

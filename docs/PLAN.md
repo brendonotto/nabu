@@ -4,24 +4,23 @@ This is the durable resume point for implementation. Update it when a milestone 
 
 ## Current milestone
 
-### M2 — Post CRUD and optimistic autosaving
+### M3 — Rich block editor and sanitized HTML projection
 
 Status: Ready to start
 
-Outcome: An author can create, list, open, edit, autosave, and delete private draft posts without a stale browser overwriting a newer revision.
+Outcome: Authors can compose structured posts with a friendly Tiptap editor while the backend validates canonical JSON and owns the safe HTML projection used for rendering.
 
 Work:
 
-- [ ] Define post request/response contracts and authorization queries.
-- [ ] Create and list private drafts for the authenticated author's blog.
-- [ ] Save title, slug, summary, and initial document content with revision checks.
-- [ ] Return `409 Conflict` with the current revision for stale saves.
-- [ ] Soft-delete drafts while preserving slug reservations.
-- [ ] Build the authoring post list and draft shell in React.
-- [ ] Add debounced autosave state and conflict recovery UX.
-- [ ] Add integration and browser tests for the complete draft lifecycle.
+- [ ] Choose the initial Tiptap extension allowlist and document it as the version 1 content schema.
+- [ ] Replace the plain-text API field with canonical structured JSON while retaining revision checks.
+- [ ] Validate document shape, node types, marks, link protocols, and content-size limits in Axum.
+- [ ] Generate sanitized HTML exclusively on the backend from validated content.
+- [ ] Build the rich editor toolbar, keyboard interactions, empty state, and accessible labels.
+- [ ] Preserve debounced autosave and explicit stale-revision recovery in the rich editor.
+- [ ] Add round-trip, malformed-document, XSS, integration, and browser coverage.
 
-The rich block editor remains M3. M2 should use the same versioned JSON and HTML fields with a minimal text surface so the persistence and conflict contract is settled first.
+Images and video blocks remain M6; M3 should establish extensible content boundaries without exposing storage concerns yet. Existing M2 documents already use compatible `doc` and `paragraph` nodes.
 
 ## Completed milestones
 
@@ -47,13 +46,23 @@ Status: Complete
 - Implements responsive React states for sign-in, code verification, onboarding, persisted completion, and logout.
 - Verification: Rust formatting and Clippy passed; 7 Rust tests passed against PostgreSQL; frontend lint and production build passed; both migrations applied; the SMTP worker delivered a code without storing it in outbox payload; browser acceptance completed the entire flow, reloaded the session, and signed out; desktop and 390px captures were inspected with no layout defects.
 
+### M2 — Post CRUD and optimistic autosaving
+
+Status: Complete
+
+- Added tenant-authorized APIs to create, list, open, update, and soft-delete private drafts.
+- Stores a versioned ProseMirror-style JSON document plus backend-escaped HTML projection.
+- Requires the last known revision for updates and deletes; stale requests return `409 Conflict` with the current revision.
+- Preserves deleted slugs and hides posts across blog boundaries.
+- Added a responsive React draft list and plain-text authoring surface with debounced autosave, save state, conflict recovery, and deletion.
+- Verification: Rust formatting and Clippy passed; 10 Rust tests passed against PostgreSQL; frontend lint and production build passed; browser acceptance covered create, autosave, reload, simulated stale-tab conflict, recovery, and delete; desktop and 390px captures were inspected.
+
 ## Next milestones
 
-1. M3 — Tiptap block editor and sanitized HTML projection
-2. M4 — Axum-rendered public posts, RSS, and sitemaps
-3. M5 — Reader invitations and private post access
-4. M6 — Image and short-video processing
-5. M7 — Comments and moderation
+1. M4 — Axum-rendered public posts, RSS, and sitemaps
+2. M5 — Reader invitations and private post access
+3. M6 — Image and short-video processing
+4. M7 — Comments and moderation
 
 ## Production gates
 

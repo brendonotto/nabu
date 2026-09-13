@@ -14,6 +14,7 @@ pub mod config;
 mod error;
 mod host;
 pub mod mail;
+mod posts;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -38,7 +39,12 @@ pub fn app(pool: PgPool, root_domain: String, auth: auth::AuthConfig) -> Router 
         .route("/auth/email/verify", post(auth::verify_email))
         .route("/auth/logout", post(auth::logout))
         .route("/session", get(auth::session))
-        .route("/blog", post(blogs::create));
+        .route("/blog", post(blogs::create))
+        .route("/posts", get(posts::list).post(posts::create))
+        .route(
+            "/posts/{post_id}",
+            get(posts::get).put(posts::update).delete(posts::delete),
+        );
 
     Router::new()
         .route("/health", get(health))
