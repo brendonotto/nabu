@@ -332,7 +332,10 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
             "title": "First light",
             "slug": "first-light",
             "summary": "A cold morning",
-            "body": "Snow <everywhere>\nAnd a quiet road",
+            "content_json": {"type": "doc", "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Snow <everywhere>"}]},
+                {"type": "paragraph", "content": [{"type": "text", "text": "And a quiet road"}]}
+            ]},
         }),
         Some(&cookie),
         Some(&csrf),
@@ -342,14 +345,14 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
     let created = response_json(created).await;
     let post_id = created["id"].as_str().unwrap();
     assert_eq!(created["revision"], 1);
-    assert_eq!(created["body"], "Snow <everywhere>\nAnd a quiet road");
+    assert_eq!(created["content_json"]["type"], "doc");
 
     let list = request_json(&app, "GET", "/api/v1/posts", json!({}), Some(&cookie), None).await;
     assert_eq!(list.status(), StatusCode::OK);
     let list = response_json(list).await;
     assert_eq!(list.as_array().unwrap().len(), 1);
     assert_eq!(list[0]["title"], "First light");
-    assert!(list[0].get("body").is_none());
+    assert!(list[0].get("content_json").is_none());
 
     let update_path = format!("/api/v1/posts/{post_id}");
     let missing_csrf = request_json(
@@ -360,7 +363,7 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
             "revision": 1,
             "title": "First light",
             "slug": "first-light",
-            "body": "Changed",
+            "content_json": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Changed"}]}]},
         }),
         Some(&cookie),
         None,
@@ -377,7 +380,7 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
             "title": "First light over the pass",
             "slug": "first-light",
             "summary": "",
-            "body": "Changed safely",
+            "content_json": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Changed safely"}]}]},
         }),
         Some(&cookie),
         Some(&csrf),
@@ -396,7 +399,7 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
             "revision": 1,
             "title": "Stale title",
             "slug": "first-light",
-            "body": "This must not win",
+            "content_json": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "This must not win"}]}]},
         }),
         Some(&cookie),
         Some(&csrf),

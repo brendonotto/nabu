@@ -4,23 +4,20 @@ This is the durable resume point for implementation. Update it when a milestone 
 
 ## Current milestone
 
-### M3 — Rich block editor and sanitized HTML projection
+### M4 — Axum-rendered public posts, RSS, and sitemaps
 
 Status: Ready to start
 
-Outcome: Authors can compose structured posts with a friendly Tiptap editor while the backend validates canonical JSON and owns the safe HTML projection used for rendering.
+Outcome: Authors can deliberately publish indexable posts that render without JavaScript on their blog subdomain and appear in RSS feeds and sitemaps.
 
 Work:
 
-- [ ] Choose the initial Tiptap extension allowlist and document it as the version 1 content schema.
-- [ ] Replace the plain-text API field with canonical structured JSON while retaining revision checks.
-- [ ] Validate document shape, node types, marks, link protocols, and content-size limits in Axum.
-- [ ] Generate sanitized HTML exclusively on the backend from validated content.
-- [ ] Build the rich editor toolbar, keyboard interactions, empty state, and accessible labels.
-- [ ] Preserve debounced autosave and explicit stale-revision recovery in the rich editor.
-- [ ] Add round-trip, malformed-document, XSS, integration, and browser coverage.
-
-Images and video blocks remain M6; M3 should establish extensible content boundaries without exposing storage concerns yet. Existing M2 documents already use compatible `doc` and `paragraph` nodes.
+- [ ] Add explicit publish/unpublish APIs and the public-to-private warning flow.
+- [ ] Render public blog and post pages through Axum templates on tenant subdomains.
+- [ ] Emit canonical metadata and prevent private or draft content from entering public responses.
+- [ ] Generate per-blog RSS and sitemap documents containing public posts only.
+- [ ] Add indexing directives and tenant-boundary integration tests.
+- [ ] Add browser coverage for publishing, public rendering, and returning a post to private state.
 
 ## Completed milestones
 
@@ -57,12 +54,22 @@ Status: Complete
 - Added a responsive React draft list and plain-text authoring surface with debounced autosave, save state, conflict recovery, and deletion.
 - Verification: Rust formatting and Clippy passed; 10 Rust tests passed against PostgreSQL; frontend lint and production build passed; browser acceptance covered create, autosave, reload, simulated stale-tab conflict, recovery, and delete; desktop and 390px captures were inspected.
 
+### M3 — Rich block editor and sanitized HTML projection
+
+Status: Complete
+
+- Documented a constrained version-1 ProseMirror schema for prose, headings, lists, quotes, code, links, and formatting marks.
+- Replaced the transitional plain-text payload with canonical structured JSON while retaining optimistic revision checks.
+- Validates document structure, nesting, node placement, marks, attributes, URL protocols, and text limits in Axum.
+- Generates escaped, safe HTML exclusively from validated backend content; client HTML is never accepted.
+- Added an accessible Tiptap editor and formatting toolbar while preserving autosave and conflict recovery.
+- Verification: Rust formatting and Clippy passed; 11 Rust tests passed against PostgreSQL; frontend lint and production build passed; malformed content, unsafe URLs, unknown attributes, HTML escaping, rich-content persistence, and browser formatting/autosave were exercised; the rendered editor was inspected.
+
 ## Next milestones
 
-1. M4 — Axum-rendered public posts, RSS, and sitemaps
-2. M5 — Reader invitations and private post access
-3. M6 — Image and short-video processing
-4. M7 — Comments and moderation
+1. M5 — Reader invitations and private post access
+2. M6 — Image and short-video processing
+3. M7 — Comments and moderation
 
 ## Production gates
 

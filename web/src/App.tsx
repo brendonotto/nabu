@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import type { JSONContent } from '@tiptap/react'
 import './App.css'
+import RichEditor from './RichEditor'
 
 type Account = {
   id: string
@@ -36,7 +38,7 @@ type PostSummary = {
 }
 
 type Post = PostSummary & {
-  body: string
+  content_json: JSONContent
   created_at: string
 }
 
@@ -89,7 +91,7 @@ function sameContent(first: Post, second: Post): boolean {
     first.title === second.title &&
     first.slug === second.slug &&
     (first.summary ?? '') === (second.summary ?? '') &&
-    first.body === second.body
+    JSON.stringify(first.content_json) === JSON.stringify(second.content_json)
   )
 }
 
@@ -177,7 +179,7 @@ function App() {
             title: snapshot.title,
             slug: snapshot.slug,
             summary: snapshot.summary ?? '',
-            body: snapshot.body,
+            content_json: snapshot.content_json,
           }),
         })
         if (activePostId.current === saved.id) setSavedPost(saved)
@@ -604,14 +606,11 @@ function App() {
                 onChange={(event) => changeDraft({ summary: event.target.value })}
                 placeholder="A sentence to help you find this post later."
               />
-              <label htmlFor="post-body">Post</label>
-              <textarea
-                className="body-input"
-                id="post-body"
-                value={draft.body}
-                maxLength={250000}
-                onChange={(event) => changeDraft({ body: event.target.value })}
-                placeholder="Begin wherever you are…"
+              <label>Post</label>
+              <RichEditor
+                content={draft.content_json}
+                revision={draft.revision}
+                onChange={(content_json) => changeDraft({ content_json })}
               />
             </div>
             <footer className="editor-footer">

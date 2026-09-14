@@ -496,6 +496,89 @@ textarea:focus {
   box-shadow: none;
 }
 
+.rich-editor {
+  min-height: 360px;
+  border-top: 1px solid var(--border);
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-toolbar button {
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.editor-toolbar button:hover:not(:disabled),
+.editor-toolbar button.active {
+  border-color: var(--border);
+  background: var(--subtle);
+  color: var(--heading);
+}
+
+.rich-editor-content {
+  min-height: 300px;
+  padding: 18px 2px;
+  outline: none;
+  color: var(--heading);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  line-height: 1.7;
+}
+
+.rich-editor-content p,
+.rich-editor-content h2,
+.rich-editor-content h3,
+.rich-editor-content blockquote,
+.rich-editor-content pre,
+.rich-editor-content ul,
+.rich-editor-content ol {
+  margin: 0 0 1em;
+}
+
+.rich-editor-content h2,
+.rich-editor-content h3 {
+  max-width: none;
+  color: var(--heading);
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.15;
+}
+
+.rich-editor-content h2 { font-size: 32px; }
+.rich-editor-content h3 { font-size: 25px; }
+.rich-editor-content blockquote {
+  padding-left: 18px;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+}
+
+.rich-editor-content pre {
+  overflow-x: auto;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--heading);
+  color: var(--surface);
+  font-family: ui-monospace, monospace;
+  font-size: 14px;
+}
+
+.rich-editor-content p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: #aaa196;
+  content: "Begin wherever you are…";
+  pointer-events: none;
+}
+
 .editor-footer {
   display: flex;
   align-items: center;

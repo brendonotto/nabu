@@ -10,11 +10,10 @@ use sqlx::{PgPool, error::DatabaseError};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{AppState, auth, error::ApiError, host};
+use crate::{AppState, auth, content, error::ApiError, host};
 
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_SUMMARY_CHARS: usize = 500;
-const MAX_BODY_CHARS: usize = 250_000;
 
 #[derive(Serialize, sqlx::FromRow)]
 pub(crate) struct PostSummary {
@@ -33,7 +32,7 @@ pub(crate) struct PostResponse {
     slug: String,
     title: String,
     summary: Option<String>,
-    body: String,
+    content_json: Value,
     revision: i64,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
@@ -59,8 +58,8 @@ pub(crate) struct CreatePostRequest {
     slug: String,
     #[serde(default)]
     summary: Option<String>,
-    #[serde(default)]
-    body: String,
+    #[serde(default = "empty_document")]
+    content_json: Value,
 }
 
 #[derive(Deserialize)]
@@ -70,8 +69,7 @@ pub(crate) struct UpdatePostRequest {
     slug: String,
     #[serde(default)]
     summary: Option<String>,
-    #[serde(default)]
-    body: String,
+    content_json: Value,
 }
 
 #[derive(Deserialize)]
@@ -110,7 +108,12 @@ pub(crate) async fn create(
 ) -> Result<(StatusCode, Json<PostResponse>), ApiError> {
     require_app_host(&request_host)?;
     let session = auth::require_session_and_csrf(&state, &jar, &headers).await?;
-    let input = validate_input(&request.title, &request.slug, request.summary, request.body)?;
+    let input = validate_input(
+        &request.title,
+        &request.slug,
+        request.summary,
+        request.content_json,
+    )?;
     let blog_id = member_blog_id(&state.pool, session.account_id).await?;
     let row = sqlx::query_as::<_, PostRow>(
         "INSERT INTO posts \
@@ -123,8 +126,8 @@ pub(crate) async fn create(
     .bind(&input.slug)
     .bind(&input.title)
     .bind(&input.summary)
-    .bind(document_json(&input.body))
-    .bind(render_html(&input.body))
+    .bind(&input.content_json)
+    .bind(&input.rendered_html)
     .bind(session.account_id)
     .fetch_one(&state.pool)
     .await
@@ -159,7 +162,12 @@ pub(crate) async fn update(
     if request.revision < 1 {
         return Err(invalid_revision());
     }
-    let input = validate_input(&request.title, &request.slug, request.summary, request.body)?;
+    let input = validate_input(
+        &request.title,
+        &request.slug,
+        request.summary,
+        request.content_json,
+    )?;
     let row = sqlx::query_as::<_, PostRow>(
         "UPDATE posts p SET slug = $1, title = $2, summary = $3, content_json = $4, \
              rendered_html = $5, revision = p.revision + 1, updated_by = $6, updated_at = now() \
@@ -173,8 +181,8 @@ pub(crate) async fn update(
     .bind(&input.slug)
     .bind(&input.title)
     .bind(&input.summary)
-    .bind(document_json(&input.body))
-    .bind(render_html(&input.body))
+    .bind(&input.content_json)
+    .bind(&input.rendered_html)
     .bind(session.account_id)
     .bind(post_id)
     .bind(request.revision)
@@ -225,14 +233,15 @@ struct ValidatedInput {
     title: String,
     slug: String,
     summary: Option<String>,
-    body: String,
+    content_json: Value,
+    rendered_html: String,
 }
 
 fn validate_input(
     title: &str,
     slug: &str,
     summary: Option<String>,
-    body: String,
+    content_json: Value,
 ) -> Result<ValidatedInput, ApiError> {
     let title = title.trim().to_owned();
     let slug = slug.trim().to_lowercase();
@@ -263,18 +272,13 @@ fn validate_input(
             "Post summaries cannot exceed 500 characters.",
         ));
     }
-    if body.chars().count() > MAX_BODY_CHARS {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "post_too_large",
-            "Post content cannot exceed 250,000 characters.",
-        ));
-    }
+    let content = content::validate_and_render(content_json).map_err(|_| invalid_content())?;
     Ok(ValidatedInput {
         title,
         slug,
         summary,
-        body,
+        content_json: content.document,
+        rendered_html: content.rendered_html,
     })
 }
 
@@ -287,48 +291,8 @@ fn valid_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
-fn document_json(body: &str) -> Value {
-    let content = body
-        .split('\n')
-        .map(|line| {
-            if line.is_empty() {
-                json!({ "type": "paragraph" })
-            } else {
-                json!({
-                    "type": "paragraph",
-                    "content": [{ "type": "text", "text": line }]
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-    json!({ "type": "doc", "content": content })
-}
-
-fn body_text(document: &Value) -> String {
-    document["content"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|paragraph| {
-            paragraph["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|node| node["text"].as_str())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render_html(body: &str) -> String {
-    let mut html = String::new();
-    for line in body.split('\n') {
-        html.push_str("<p>");
-        html.push_str(&html_escape::encode_text(line));
-        html.push_str("</p>");
-    }
-    html
+fn empty_document() -> Value {
+    json!({ "type": "doc", "content": [{ "type": "paragraph" }] })
 }
 
 async fn member_blog_id(pool: &PgPool, account_id: Uuid) -> Result<Uuid, ApiError> {
@@ -418,6 +382,14 @@ fn invalid_revision() -> ApiError {
     )
 }
 
+fn invalid_content() -> ApiError {
+    ApiError::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_post_content",
+        "This post contains unsupported or malformed content.",
+    )
+}
+
 impl From<PostRow> for PostResponse {
     fn from(row: PostRow) -> Self {
         Self {
@@ -425,7 +397,7 @@ impl From<PostRow> for PostResponse {
             slug: row.slug,
             title: row.title,
             summary: row.summary,
-            body: body_text(&row.content_json),
+            content_json: row.content_json,
             revision: row.revision,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -435,22 +407,7 @@ impl From<PostRow> for PostResponse {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
-    use super::{body_text, document_json, render_html, valid_slug};
-
-    #[test]
-    fn plain_text_projection_preserves_lines_and_escapes_html() {
-        let body = "A <quiet> place\n\nSecond & final";
-        let document = document_json(body);
-
-        assert_eq!(body_text(&document), body);
-        assert_eq!(
-            render_html(body),
-            "<p>A &lt;quiet&gt; place</p><p></p><p>Second &amp; final</p>"
-        );
-        assert_eq!(document["type"], json!("doc"));
-    }
+    use super::valid_slug;
 
     #[test]
     fn post_slug_validation_covers_boundaries() {

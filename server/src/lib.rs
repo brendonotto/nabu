@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 pub mod auth;
 mod blogs;
 pub mod config;
+mod content;
 mod error;
 mod host;
 pub mod mail;
