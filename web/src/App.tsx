@@ -33,7 +33,10 @@ type PostSummary = {
   slug: string
   title: string
   summary?: string
+  publication_status: 'draft' | 'published'
+  visibility: 'private' | 'public'
   revision: number
+  published_at?: string
   updated_at: string
 }
 
@@ -101,7 +104,10 @@ function toSummary(post: Post): PostSummary {
     slug: post.slug,
     title: post.title,
     summary: post.summary,
+    publication_status: post.publication_status,
+    visibility: post.visibility,
     revision: post.revision,
+    published_at: post.published_at,
     updated_at: post.updated_at,
   }
 }
@@ -337,7 +343,7 @@ function App() {
 
   async function deletePost() {
     if (!draft || !savedPost || !session?.csrf_token) return
-    if (!window.confirm('Delete this draft? Its address will remain reserved.')) return
+    if (!window.confirm('Delete this post? Its address will remain reserved.')) return
     setBusy(true)
     setError('')
     try {
@@ -353,6 +359,40 @@ function App() {
     } catch (caught) {
       setSaveState(caught instanceof ApiRequestError && caught.code === 'stale_revision' ? 'conflict' : 'error')
       setError(caught instanceof Error ? caught.message : 'Unable to delete this post.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setVisibility(visibility: 'private' | 'public') {
+    if (!draft || !savedPost || !session?.csrf_token) return
+    if (
+      visibility === 'private' &&
+      !window.confirm(
+        'Make this post private? It will disappear from your public blog, RSS feed, and sitemap. Search engines may retain cached copies for a while.',
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const post = await api<Post>(`/posts/${draft.id}/publication`, {
+        method: 'PUT',
+        headers: { 'x-csrf-token': session.csrf_token },
+        body: JSON.stringify({ revision: savedPost.revision, visibility }),
+      })
+      setDraft(post)
+      setSavedPost(post)
+      setPosts((current) => [toSummary(post), ...current.filter((item) => item.id !== post.id)])
+      setSaveState('saved')
+    } catch (caught) {
+      setSaveState(
+        caught instanceof ApiRequestError && caught.code === 'stale_revision'
+          ? 'conflict'
+          : 'error',
+      )
+      setError(caught instanceof Error ? caught.message : 'Unable to change post visibility.')
     } finally {
       setBusy(false)
     }
@@ -547,7 +587,13 @@ function App() {
                   disabled={hasUnsavedChanges || saveState === 'saving'}
                 >
                   <strong>{post.title}</strong>
-                  <span>{post.summary || 'Private draft'}</span>
+                  <span>
+                    {post.visibility === 'public'
+                      ? 'Public'
+                      : post.publication_status === 'published'
+                        ? 'Private'
+                        : post.summary || 'Private draft'}
+                  </span>
                 </button>
               ))}
             </div>
@@ -614,15 +660,53 @@ function App() {
               />
             </div>
             <footer className="editor-footer">
-              <p>Private draft · only your blog’s authors can see this</p>
-              <button
-                className="danger-button"
-                type="button"
-                onClick={deletePost}
-                disabled={busy || hasUnsavedChanges || saveState === 'saving'}
-              >
-                Delete draft
-              </button>
+              <div>
+                <p className={draft.visibility === 'public' ? 'visibility-status public' : 'visibility-status'}>
+                  {draft.visibility === 'public'
+                    ? 'Public · discoverable by readers and search engines'
+                    : draft.publication_status === 'published'
+                      ? 'Private · removed from the public blog'
+                      : 'Private draft · only your blog’s authors can see this'}
+                </p>
+                {draft.visibility === 'public' && (
+                  <a
+                    className="public-link"
+                    href={`https://${session.blog.slug}.${import.meta.env.VITE_ROOT_DOMAIN ?? 'nabu.test'}/${draft.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View public post ↗
+                  </a>
+                )}
+              </div>
+              <div className="editor-actions">
+                {draft.visibility === 'public' ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setVisibility('private')}
+                    disabled={busy || hasUnsavedChanges || saveState === 'saving'}
+                  >
+                    Make private
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setVisibility('public')}
+                    disabled={busy || hasUnsavedChanges || saveState === 'saving'}
+                  >
+                    Publish publicly
+                  </button>
+                )}
+                <button
+                  className="danger-button"
+                  type="button"
+                  onClick={deletePost}
+                  disabled={busy || hasUnsavedChanges || saveState === 'saving'}
+                >
+                  Delete post
+                </button>
+              </div>
             </footer>
           </article>
         ) : (

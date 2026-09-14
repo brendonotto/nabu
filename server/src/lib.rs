@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     http::StatusCode,
     middleware,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use serde::Serialize;
 use sqlx::PgPool;
@@ -16,6 +16,7 @@ mod error;
 mod host;
 pub mod mail;
 mod posts;
+mod public;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -45,11 +46,17 @@ pub fn app(pool: PgPool, root_domain: String, auth: auth::AuthConfig) -> Router 
         .route(
             "/posts/{post_id}",
             get(posts::get).put(posts::update).delete(posts::delete),
-        );
+        )
+        .route("/posts/{post_id}/publication", put(posts::set_publication));
 
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/", get(public::blog))
+        .route("/feed.xml", get(public::feed))
+        .route("/sitemap.xml", get(public::sitemap))
+        .route("/robots.txt", get(public::robots))
+        .route("/{post_slug}", get(public::post))
         .nest("/api/v1", api)
         .layer(middleware::from_fn_with_state(
             state.clone(),

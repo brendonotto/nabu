@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · {{ blog_title }}</title>
+  {% if !description.is_empty() %}<meta name="description" content="{{ description }}">{% endif %}
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{ title }}">
+  {% if !description.is_empty() %}<meta property="og:description" content="{{ description }}">{% endif %}
+  <meta property="og:url" content="{{ canonical_url }}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #39332d; background: #fffefa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(760px, calc(100% - 40px)); margin: 0 auto; padding: 50px 0 100px; }
+    nav { margin-bottom: 75px; }
+    nav a { color: #9b4d36; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-decoration: none; text-transform: uppercase; }
+    h1, h2, h3 { color: #26221e; font-family: Georgia, "Times New Roman", serif; }
+    h1 { max-width: 700px; margin: 0 0 20px; font-size: clamp(42px, 8vw, 72px); line-height: 1.04; }
+    .summary { max-width: 630px; margin: 0 0 18px; color: #615950; font-size: 20px; line-height: 1.55; }
+    time { color: #776e65; font-size: 13px; }
+    .content { margin-top: 55px; color: #302b26; font-family: Georgia, "Times New Roman", serif; font-size: 20px; line-height: 1.75; }
+    .content > * { margin: 0 0 1.15em; }
+    .content h2 { margin-top: 1.6em; font-size: 34px; line-height: 1.2; }
+    .content h3 { margin-top: 1.5em; font-size: 27px; line-height: 1.25; }
+    .content a { color: #85422f; text-underline-offset: 3px; }
+    .content blockquote { padding-left: 22px; border-left: 3px solid #9b4d36; color: #615950; }
+    .content pre { overflow-x: auto; padding: 20px; border-radius: 8px; background: #26221e; color: #f5f0e7; font: 14px/1.55 ui-monospace, monospace; }
+    .content hr { margin: 42px 0; border: 0; border-top: 1px solid #d8d0c3; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav><a href="{{ blog_url }}">← {{ blog_title }}</a></nav>
+    <article>
+      <header>
+        <h1>{{ title }}</h1>
+        {% if !description.is_empty() %}<p class="summary">{{ description }}</p>{% endif %}
+        <time datetime="{{ published_datetime }}">{{ published_date }}</time>
+      </header>
+      <div class="content">{{ rendered_html|safe }}</div>
+    </article>
+  </main>
+</body>
+</html>

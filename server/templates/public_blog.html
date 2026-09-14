@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ blog_title }}</title>
+  <meta name="description" content="Public posts from {{ blog_title }}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <link rel="alternate" type="application/rss+xml" title="{{ blog_title }}" href="{{ feed_url }}">
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #39332d; background: #f5f0e7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(760px, calc(100% - 40px)); margin: 0 auto; padding: 80px 0 100px; }
+    header { padding-bottom: 32px; border-bottom: 1px solid #d8d0c3; }
+    h1, h2 { margin: 0; color: #26221e; font-family: Georgia, "Times New Roman", serif; }
+    h1 { font-size: clamp(42px, 8vw, 72px); line-height: 1.05; }
+    .kicker { margin: 0 0 12px; color: #9b4d36; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .posts { display: grid; gap: 0; }
+    article { padding: 34px 0; border-bottom: 1px solid #d8d0c3; }
+    h2 { font-size: clamp(27px, 5vw, 38px); line-height: 1.15; }
+    a { color: inherit; text-decoration-color: #bca99d; text-underline-offset: 5px; }
+    p { max-width: 650px; margin: 13px 0 0; line-height: 1.65; }
+    time, .empty { color: #776e65; font-size: 13px; }
+    time { display: block; margin-top: 15px; }
+    .empty { padding: 38px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <header><p class="kicker">Nabu journal</p><h1>{{ blog_title }}</h1></header>
+    <section class="posts" aria-label="Public posts">
+    {% if posts.is_empty() %}
+      <p class="empty">No public posts yet.</p>
+    {% else %}
+      {% for post in posts %}
+      <article>
+        <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+        {% if !post.summary.is_empty() %}<p>{{ post.summary }}</p>{% endif %}
+        <time>{{ post.published_date }}</time>
+      </article>
+      {% endfor %}
+    {% endif %}
+    </section>
+  </main>
+</body>
+</html>

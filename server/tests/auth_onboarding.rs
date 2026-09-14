@@ -53,6 +53,24 @@ async fn response_json(response: Response<Body>) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+async fn request_public(app: &Router, host: &str, path: &str) -> Response<Body> {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .uri(path)
+                .header(header::HOST, host)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+async fn response_text(response: Response<Body>) -> String {
+    let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
+
 async fn start_sign_in(app: &Router, email: &str) -> Uuid {
     let response = request_json(
         app,
@@ -467,4 +485,143 @@ async fn post_lifecycle_prevents_stale_and_cross_blog_writes(pool: PgPool) {
     )
     .await;
     assert_eq!(reserved_slug.status(), StatusCode::CONFLICT);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn public_surfaces_include_only_public_posts_on_their_tenant(pool: PgPool) {
+    let app = test_app(pool);
+    let (cookie, csrf) = sign_in(&app, "publisher@example.com").await;
+    create_blog(&app, &cookie, &csrf, "Field & Notes", "field-notes").await;
+    let created = request_json(
+        &app,
+        "POST",
+        "/api/v1/posts",
+        json!({
+            "title": "Snow <and> sunlight",
+            "slug": "first-light",
+            "summary": "Cold & clear",
+            "content_json": {"type": "doc", "content": [{"type": "paragraph", "content": [
+                {"type": "text", "text": "A <quiet> road"}
+            ]}]},
+        }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await;
+    let post_id = created["id"].as_str().unwrap();
+    assert_eq!(created["publication_status"], "draft");
+    assert_eq!(created["visibility"], "private");
+    assert_eq!(created["published_at"], Value::Null);
+
+    let hidden = request_public(&app, "field-notes.nabu.test", "/first-light").await;
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+    let empty_index = request_public(&app, "field-notes.nabu.test", "/").await;
+    assert_eq!(empty_index.status(), StatusCode::NOT_FOUND);
+
+    let publication_path = format!("/api/v1/posts/{post_id}/publication");
+    let published = request_json(
+        &app,
+        "PUT",
+        &publication_path,
+        json!({ "revision": 1, "visibility": "public" }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(published.status(), StatusCode::OK);
+    let published = response_json(published).await;
+    assert_eq!(published["publication_status"], "published");
+    assert_eq!(published["visibility"], "public");
+    assert_eq!(published["revision"], 2);
+    assert!(published["published_at"].is_string());
+
+    let stale = request_json(
+        &app,
+        "PUT",
+        &publication_path,
+        json!({ "revision": 1, "visibility": "private" }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+
+    let public_post = request_public(&app, "field-notes.nabu.test", "/first-light").await;
+    assert_eq!(public_post.status(), StatusCode::OK);
+    let public_post = response_text(public_post).await;
+    assert!(public_post.contains("Snow"));
+    assert!(public_post.contains("sunlight"));
+    assert!(!public_post.contains("Snow <and> sunlight"));
+    assert!(public_post.contains("<p>A &lt;quiet&gt; road</p>"));
+    assert!(
+        public_post.contains(
+            "<link rel=\"canonical\" href=\"https://field-notes.nabu.test/first-light\">"
+        )
+    );
+
+    let index = response_text(request_public(&app, "field-notes.nabu.test", "/").await).await;
+    assert!(index.contains("Snow"));
+    assert!(index.contains("sunlight"));
+    assert!(!index.contains("Snow <and> sunlight"));
+    let feed = request_public(&app, "field-notes.nabu.test", "/feed.xml").await;
+    assert_eq!(
+        feed.headers()[header::CONTENT_TYPE],
+        "application/rss+xml; charset=utf-8"
+    );
+    let feed = response_text(feed).await;
+    assert!(feed.contains("Snow &lt;and&gt; sunlight"));
+    assert!(feed.contains("Cold &amp; clear"));
+    let sitemap =
+        response_text(request_public(&app, "field-notes.nabu.test", "/sitemap.xml").await).await;
+    assert!(sitemap.contains("https://field-notes.nabu.test/first-light"));
+    let robots =
+        response_text(request_public(&app, "field-notes.nabu.test", "/robots.txt").await).await;
+    assert!(robots.contains("Sitemap: https://field-notes.nabu.test/sitemap.xml"));
+
+    assert_eq!(
+        request_public(&app, "elsewhere.nabu.test", "/first-light")
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        request_public(&app, "app.nabu.test", "/first-light")
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+
+    let private = request_json(
+        &app,
+        "PUT",
+        &publication_path,
+        json!({ "revision": 2, "visibility": "private" }),
+        Some(&cookie),
+        Some(&csrf),
+    )
+    .await;
+    assert_eq!(private.status(), StatusCode::OK);
+    let private = response_json(private).await;
+    assert_eq!(private["publication_status"], "published");
+    assert_eq!(private["visibility"], "private");
+
+    assert_eq!(
+        request_public(&app, "field-notes.nabu.test", "/first-light")
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    for path in ["/", "/feed.xml", "/sitemap.xml"] {
+        assert_eq!(
+            request_public(&app, "field-notes.nabu.test", path)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    let robots =
+        response_text(request_public(&app, "field-notes.nabu.test", "/robots.txt").await).await;
+    assert_eq!(robots, "User-agent: *\nDisallow: /\n");
 }

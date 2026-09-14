@@ -4,20 +4,20 @@ This is the durable resume point for implementation. Update it when a milestone 
 
 ## Current milestone
 
-### M4 — Axum-rendered public posts, RSS, and sitemaps
+### M5 — Reader invitations and private post access
 
 Status: Ready to start
 
-Outcome: Authors can deliberately publish indexable posts that render without JavaScript on their blog subdomain and appear in RSS feeds and sitemaps.
+Outcome: Authors can invite readers by email to a whole blog or individual posts, and verified readers can return on the same device without requesting a code each time.
 
 Work:
 
-- [ ] Add explicit publish/unpublish APIs and the public-to-private warning flow.
-- [ ] Render public blog and post pages through Axum templates on tenant subdomains.
-- [ ] Emit canonical metadata and prevent private or draft content from entering public responses.
-- [ ] Generate per-blog RSS and sitemap documents containing public posts only.
-- [ ] Add indexing directives and tenant-boundary integration tests.
-- [ ] Add browser coverage for publishing, public rendering, and returning a post to private state.
+- [ ] Add author-managed blog and post invitation APIs with email delivery and revocation.
+- [ ] Verify invited addresses with short-lived, attempt-limited email codes on the tenant host.
+- [ ] Persist host-only reader sessions and check active grants on every protected request.
+- [ ] Render authorized private posts without exposing them through metadata, feeds, or sitemaps.
+- [ ] Return indistinguishable `404` responses for missing, unauthorized, and revoked content.
+- [ ] Add tenant, grant-scope, revocation, session-persistence, and browser integration coverage.
 
 ## Completed milestones
 
@@ -65,11 +65,21 @@ Status: Complete
 - Added an accessible Tiptap editor and formatting toolbar while preserving autosave and conflict recovery.
 - Verification: Rust formatting and Clippy passed; 11 Rust tests passed against PostgreSQL; frontend lint and production build passed; malformed content, unsafe URLs, unknown attributes, HTML escaping, rich-content persistence, and browser formatting/autosave were exercised; the rendered editor was inspected.
 
+### M4 — Axum-rendered public posts, RSS, and sitemaps
+
+Status: Complete
+
+- Added revision-checked publication transitions that deliberately opt a post into public, indexable access while preserving the publication timestamp when it returns to private.
+- Added clear authoring status and controls, including a warning that removal from Nabu's public surfaces cannot immediately remove search-engine caches.
+- Rendered public blog indexes and post pages through escaped Askama templates selected by tenant subdomain, with canonical and Open Graph metadata.
+- Added per-blog RSS, sitemap, and robots responses; blogs with no public posts expose no blog title or public index and instruct crawlers not to enter.
+- Public queries require an active blog and an undeleted post with both `published` and `public` state; tenant, draft, private, stale-revision, and escaping boundaries have integration coverage.
+- Verification: Rust formatting and Clippy passed; 12 Rust tests passed against PostgreSQL; frontend lint and production build passed; browser acceptance covered publish, public SSR, the public-to-private warning, immediate `404`, and republishing; desktop and 390px author views and the public post were inspected without layout defects.
+
 ## Next milestones
 
-1. M5 — Reader invitations and private post access
-2. M6 — Image and short-video processing
-3. M7 — Comments and moderation
+1. M6 — Image and short-video processing
+2. M7 — Comments and moderation
 
 ## Production gates
 

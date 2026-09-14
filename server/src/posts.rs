@@ -21,7 +21,11 @@ pub(crate) struct PostSummary {
     slug: String,
     title: String,
     summary: Option<String>,
+    publication_status: String,
+    visibility: String,
     revision: i64,
+    #[serde(with = "time::serde::rfc3339::option")]
+    published_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
 }
@@ -33,7 +37,11 @@ pub(crate) struct PostResponse {
     title: String,
     summary: Option<String>,
     content_json: Value,
+    publication_status: String,
+    visibility: String,
     revision: i64,
+    #[serde(with = "time::serde::rfc3339::option")]
+    published_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
@@ -47,7 +55,10 @@ struct PostRow {
     title: String,
     summary: Option<String>,
     content_json: Value,
+    publication_status: String,
+    visibility: String,
     revision: i64,
+    published_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -77,6 +88,19 @@ pub(crate) struct DeletePostRequest {
     revision: i64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Visibility {
+    Private,
+    Public,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SetPublicationRequest {
+    revision: i64,
+    visibility: Visibility,
+}
+
 pub(crate) async fn list(
     Extension(request_host): Extension<host::RequestHost>,
     axum::extract::State(state): axum::extract::State<AppState>,
@@ -85,7 +109,8 @@ pub(crate) async fn list(
     require_app_host(&request_host)?;
     let session = auth::require_session(&state, &jar).await?;
     let posts = sqlx::query_as::<_, PostSummary>(
-        "SELECT p.id, p.slug::text AS slug, p.title, p.summary, p.revision, p.updated_at \
+        "SELECT p.id, p.slug::text AS slug, p.title, p.summary, p.publication_status, \
+                p.visibility, p.revision, p.published_at, p.updated_at \
          FROM posts p JOIN blogs b ON b.id = p.blog_id \
          JOIN blog_members m ON m.blog_id = p.blog_id \
          WHERE m.account_id = $1 AND m.accepted_at IS NOT NULL \
@@ -119,7 +144,8 @@ pub(crate) async fn create(
         "INSERT INTO posts \
          (id, blog_id, slug, title, summary, content_json, rendered_html, created_by, updated_by) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) \
-         RETURNING id, slug::text AS slug, title, summary, content_json, revision, created_at, updated_at",
+         RETURNING id, slug::text AS slug, title, summary, content_json, publication_status, \
+                   visibility, revision, published_at, created_at, updated_at",
     )
     .bind(Uuid::now_v7())
     .bind(blog_id)
@@ -176,7 +202,8 @@ pub(crate) async fn update(
                        WHERE m.blog_id = p.blog_id AND m.account_id = $6 \
                          AND m.accepted_at IS NOT NULL AND b.deleted_at IS NULL) \
          RETURNING p.id, p.slug::text AS slug, p.title, p.summary, p.content_json, \
-                   p.revision, p.created_at, p.updated_at",
+                   p.publication_status, p.visibility, p.revision, p.published_at, \
+                   p.created_at, p.updated_at",
     )
     .bind(&input.slug)
     .bind(&input.title)
@@ -189,6 +216,51 @@ pub(crate) async fn update(
     .fetch_optional(&state.pool)
     .await
     .map_err(map_write_error)?;
+
+    match row {
+        Some(row) => Ok(Json(row.into())),
+        None => Err(current_revision_or_not_found(&state.pool, session.account_id, post_id).await?),
+    }
+}
+
+pub(crate) async fn set_publication(
+    Extension(request_host): Extension<host::RequestHost>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
+    jar: CookieJar,
+    Path(post_id): Path<Uuid>,
+    Json(request): Json<SetPublicationRequest>,
+) -> Result<Json<PostResponse>, ApiError> {
+    require_app_host(&request_host)?;
+    let session = auth::require_session_and_csrf(&state, &jar, &headers).await?;
+    if request.revision < 1 {
+        return Err(invalid_revision());
+    }
+    let visibility = match request.visibility {
+        Visibility::Private => "private",
+        Visibility::Public => "public",
+    };
+    let row = sqlx::query_as::<_, PostRow>(
+        "UPDATE posts p SET \
+             publication_status = CASE WHEN $1 = 'public' THEN 'published' ELSE p.publication_status END, \
+             visibility = $1, \
+             published_at = CASE WHEN $1 = 'public' THEN COALESCE(p.published_at, now()) ELSE p.published_at END, \
+             revision = p.revision + 1, updated_by = $2, updated_at = now() \
+         WHERE p.id = $3 AND p.revision = $4 AND p.deleted_at IS NULL \
+           AND EXISTS (SELECT 1 FROM blog_members m JOIN blogs b ON b.id = m.blog_id \
+                       WHERE m.blog_id = p.blog_id AND m.account_id = $2 \
+                         AND m.accepted_at IS NOT NULL AND b.deleted_at IS NULL) \
+         RETURNING p.id, p.slug::text AS slug, p.title, p.summary, p.content_json, \
+                   p.publication_status, p.visibility, p.revision, p.published_at, \
+                   p.created_at, p.updated_at",
+    )
+    .bind(visibility)
+    .bind(session.account_id)
+    .bind(post_id)
+    .bind(request.revision)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(ApiError::internal)?;
 
     match row {
         Some(row) => Ok(Json(row.into())),
@@ -315,7 +387,8 @@ async fn find_post(
 ) -> Result<Option<PostRow>, ApiError> {
     sqlx::query_as(
         "SELECT p.id, p.slug::text AS slug, p.title, p.summary, p.content_json, \
-                p.revision, p.created_at, p.updated_at \
+                p.publication_status, p.visibility, p.revision, p.published_at, \
+                p.created_at, p.updated_at \
          FROM posts p JOIN blogs b ON b.id = p.blog_id \
          JOIN blog_members m ON m.blog_id = p.blog_id \
          WHERE p.id = $1 AND m.account_id = $2 AND m.accepted_at IS NOT NULL \
@@ -398,7 +471,10 @@ impl From<PostRow> for PostResponse {
             title: row.title,
             summary: row.summary,
             content_json: row.content_json,
+            publication_status: row.publication_status,
+            visibility: row.visibility,
             revision: row.revision,
+            published_at: row.published_at,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

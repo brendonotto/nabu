@@ -595,6 +595,42 @@ textarea:focus {
   font-size: 13px;
 }
 
+.editor-footer .visibility-status.public {
+  color: #39734c;
+  font-weight: 650;
+}
+
+.public-link {
+  display: inline-block;
+  margin-top: 7px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.editor-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-actions button {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.secondary-button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--heading);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: var(--subtle);
+}
+
 .danger-button {
   margin: 0;
   padding: 8px;
